@@ -1,0 +1,31 @@
+name: Build Windows Exe
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        
+    - name: Build with PyInstaller
+      # 注意：这里使用了 Windows 分号分隔符，并将当前目录下的 exiftool.exe 打包进程序
+      run: |
+        pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." getgeotag.py
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: Getgeotag-Windows
+        path: dist/Getgeotag
