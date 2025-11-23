@@ -19,19 +19,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         
-    # 关键步骤：让 GitHub 自动下载官方 12.70 版本 (8MB版)
-    # 这一步会自动下载、解压、重命名，您无需操心
-    - name: Auto-Download ExifTool (Legacy Standalone)
+    - name: Download ExifTool
+      # 从 GitHub Release 下载稳定版本并整理文件结构
       run: |
-        curl -L -o exiftool.zip https://exiftool.org/exiftool-12.70.zip
-        7z x exiftool.zip
-        move "exiftool(-k).exe" exiftool.exe
-        dir
+        Invoke-WebRequest -Uri "https://github.com/OliverBetz/exiftool-windows/releases/download/12.87/exiftool-12.87_64.zip" -OutFile "exiftool.zip"
+        Expand-Archive -Path "exiftool.zip" -DestinationPath "exiftool_temp"
+        Move-Item -Path "exiftool_temp\exiftool(-k).exe" -Destination ".\exiftool.exe"
+        Move-Item -Path "exiftool_temp\exiftool_files" -Destination ".\exiftool_files"
         
     - name: Build with PyInstaller
-      # 这里的命令不需要变，因为上面的步骤已经生成了 exiftool.exe
+      # 打包主程序，同时包含 ExifTool 可执行文件及其依赖目录
       run: |
-        pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." getgeotag.py
+        pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." --add-data "exiftool_files;exiftool_files" getgeotag.py
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
