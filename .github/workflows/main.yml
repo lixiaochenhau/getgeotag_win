@@ -19,28 +19,56 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         
-    - name: Download and Prepare ExifTool
-      # 使用 Windows 原生 CMD 和通配符处理，稳定性最高
-      shell: cmd
+    - name: Download and Organize (via Python)
+      # 使用 Python 脚本处理文件移动，这是最稳健的方法，避开 Shell 语法差异
       run: |
-        :: 1. 下载指定版本 (Oliver Betz 13.10)
+        # 1. 下载
         curl -L -o exiftool.zip https://github.com/OliverBetz/exiftool-windows/releases/download/13.10/exiftool-13.10_64.zip
         
-        :: 2. 使用 7zip 解压到 temp 文件夹
-        7z x exiftool.zip -otemp
+        # 2. 解压
+        7z x exiftool.zip -otemp_extract
         
-        :: 3. 使用通配符 (*) 移动文件，忽略中间的文件夹名称
-        :: 将 exe 移动到根目录并重命名
-        move temp\*\exiftool(-k).exe exiftool.exe
+        # 3. 使用 Python 脚本查找并移动文件
+        python -c "
+        import os
+        import shutil
         
-        :: 将依赖文件夹移动到根目录
-        move temp\*\exiftool_files exiftool_files
+        found_exe = False
+        found_dir = False
         
-        :: 4. 验证文件结构
+        # 遍历临时文件夹查找目标
+        for root, dirs, files in os.walk('temp_extract'):
+            # 找 exe
+            if 'exiftool(-k).exe' in files:
+                src = os.path.join(root, 'exiftool(-k).exe')
+                dst = 'exiftool.exe'
+                print(f'Found exe at: {src}, moving to {dst}')
+                if os.path.exists(dst): os.remove(dst)
+                shutil.move(src, dst)
+                found_exe = True
+            
+            # 找依赖文件夹
+            if 'exiftool_files' in dirs:
+                src = os.path.join(root, 'exiftool_files')
+                dst = 'exiftool_files'
+                print(f'Found dir at: {src}, moving to {dst}')
+                if os.path.exists(dst): shutil.rmtree(dst)
+                shutil.move(src, dst)
+                found_dir = True
+        
+        if not found_exe:
+            print('Error: Exiftool exe not found!')
+            exit(1)
+        if not found_dir:
+            print('Error: Exiftool_files dir not found!')
+            exit(1)
+        "
+        
+        # 4. 验证
         dir
         
     - name: Build with PyInstaller
-      # 打包 ExifTool 主程序及依赖目录
+      # 此时 exiftool.exe 和 exiftool_files 都在根目录，直接打包
       run: |
         pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." --add-data "exiftool_files;exiftool_files" getgeotag.py
         
