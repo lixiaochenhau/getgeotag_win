@@ -7,27 +7,22 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    # 步骤1：拉取代码 (升级到 v4)
     - uses: actions/checkout@v4
     
-    # 步骤2：设置 Python 环境 (升级到 v5)
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
         
-    # 步骤3：安装 PyInstaller
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
         
-    # 步骤4：执行打包 (确保您的仓库里直接有 exiftool.exe)
     - name: Build with PyInstaller
       run: |
         pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." getgeotag.py
         
-    # 步骤5：上传结果 (关键修复：升级到 v4)
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
