@@ -19,28 +19,28 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         
-    - name: Download and Organize ExifTool
-      # 使用 Bash Shell，利用 find 命令自动定位文件，忽略目录结构差异
-      shell: bash
+    - name: Download and Prepare ExifTool
+      # 使用 Windows 原生 CMD 和通配符处理，稳定性最高
+      shell: cmd
       run: |
-        # 下载稳定版本
+        :: 1. 下载指定版本 (Oliver Betz 13.10)
         curl -L -o exiftool.zip https://github.com/OliverBetz/exiftool-windows/releases/download/13.10/exiftool-13.10_64.zip
         
-        # 解压
-        unzip -q exiftool.zip
+        :: 2. 使用 7zip 解压到 temp 文件夹
+        7z x exiftool.zip -otemp
         
-        # 使用 find 查找 exe 文件并移动到当前根目录
-        find . -name "exiftool(-k).exe" -exec mv {} ./exiftool.exe \;
+        :: 3. 使用通配符 (*) 移动文件，忽略中间的文件夹名称
+        :: 将 exe 移动到根目录并重命名
+        move temp\*\exiftool(-k).exe exiftool.exe
         
-        # 使用 find 查找依赖文件夹并移动到当前根目录
-        find . -name "exiftool_files" -type d -exec mv {} ./exiftool_files \;
+        :: 将依赖文件夹移动到根目录
+        move temp\*\exiftool_files exiftool_files
         
-        # 验证文件是否就位
-        ls -l exiftool.exe
-        ls -d exiftool_files
+        :: 4. 验证文件结构
+        dir
         
     - name: Build with PyInstaller
-      # 执行打包
+      # 打包 ExifTool 主程序及依赖目录
       run: |
         pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." --add-data "exiftool_files;exiftool_files" getgeotag.py
         
