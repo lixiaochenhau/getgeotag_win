@@ -19,18 +19,28 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         
-    - name: Download and Prepare ExifTool
-      # 使用 curl 和 7z 处理，避免 PowerShell 路径搜索错误
-      # 明确指定版本 13.10，确保路径结构已知且固定
+    - name: Download and Organize ExifTool
+      # 使用 Bash Shell，利用 find 命令自动定位文件，忽略目录结构差异
+      shell: bash
       run: |
+        # 下载稳定版本
         curl -L -o exiftool.zip https://github.com/OliverBetz/exiftool-windows/releases/download/13.10/exiftool-13.10_64.zip
-        7z x exiftool.zip -oextract_temp
-        move extract_temp\exiftool-13.10_64\exiftool(-k).exe exiftool.exe
-        move extract_temp\exiftool-13.10_64\exiftool_files exiftool_files
-        dir
+        
+        # 解压
+        unzip -q exiftool.zip
+        
+        # 使用 find 查找 exe 文件并移动到当前根目录
+        find . -name "exiftool(-k).exe" -exec mv {} ./exiftool.exe \;
+        
+        # 使用 find 查找依赖文件夹并移动到当前根目录
+        find . -name "exiftool_files" -type d -exec mv {} ./exiftool_files \;
+        
+        # 验证文件是否就位
+        ls -l exiftool.exe
+        ls -d exiftool_files
         
     - name: Build with PyInstaller
-      # 打包主程序及依赖资源
+      # 执行打包
       run: |
         pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." --add-data "exiftool_files;exiftool_files" getgeotag.py
         
