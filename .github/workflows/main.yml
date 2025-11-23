@@ -19,16 +19,32 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         
-    - name: Download ExifTool
-      # 从 GitHub Release 下载稳定版本并整理文件结构
+    - name: Download and Prepare ExifTool
+      # 下载、解压并递归查找所需文件，移动至构建根目录
       run: |
+        # 下载压缩包
         Invoke-WebRequest -Uri "https://github.com/OliverBetz/exiftool-windows/releases/download/12.87/exiftool-12.87_64.zip" -OutFile "exiftool.zip"
-        Expand-Archive -Path "exiftool.zip" -DestinationPath "exiftool_temp"
-        Move-Item -Path "exiftool_temp\exiftool(-k).exe" -Destination ".\exiftool.exe"
-        Move-Item -Path "exiftool_temp\exiftool_files" -Destination ".\exiftool_files"
+        
+        # 解压至临时目录
+        Expand-Archive -Path "exiftool.zip" -DestinationPath "temp_extract"
+        
+        # 递归查找可执行文件和依赖文件夹路径
+        $exePath = Get-ChildItem -Path "temp_extract" -Filter "exiftool(-k).exe" -Recurse | Select-Object -First 1
+        $libPath = Get-ChildItem -Path "temp_extract" -Filter "exiftool_files" -Directory -Recurse | Select-Object -First 1
+        
+        # 校验文件是否存在
+        if (-not $exePath) { Write-Error "ExifTool executable not found"; exit 1 }
+        if (-not $libPath) { Write-Error "ExifTool library folder not found"; exit 1 }
+        
+        # 移动并重命名至工作区根目录
+        Move-Item -Path $exePath.FullName -Destination ".\exiftool.exe" -Force
+        Move-Item -Path $libPath.FullName -Destination ".\exiftool_files" -Force
+        
+        # 列出文件以确认
+        ls
         
     - name: Build with PyInstaller
-      # 打包主程序，同时包含 ExifTool 可执行文件及其依赖目录
+      # 执行打包，包含主程序及依赖资源
       run: |
         pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." --add-data "exiftool_files;exiftool_files" getgeotag.py
         
