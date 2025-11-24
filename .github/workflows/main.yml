@@ -1,79 +1,54 @@
-name: Build Windows Exe
+name: Build GetGeoTag Windows
 
-on: [push]
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
-    
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    # 1. 拉取代码
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. 设置 Python 环境
+    - name: Setup Python
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.9'
-        
-    - name: Install Dependencies
+        python-version: '3.10'
+        architecture: 'x64'
+
+    # 3. 安装 PyInstaller
+    # 您的脚本只使用了标准库(os, sys, tkinter等)，不需要安装 requirements.txt
+    - name: Install PyInstaller
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        
-    - name: Download and Organize (via Python)
-      # 使用 Python 脚本处理文件移动，这是最稳健的方法，避开 Shell 语法差异
+
+    # 4. 验证 ExifTool 是否存在 (安全检查)
+    - name: Verify ExifTool
       run: |
-        # 1. 下载
-        curl -L -o exiftool.zip https://github.com/OliverBetz/exiftool-windows/releases/download/13.10/exiftool-13.10_64.zip
-        
-        # 2. 解压
-        7z x exiftool.zip -otemp_extract
-        
-        # 3. 使用 Python 脚本查找并移动文件
-        python -c "
-        import os
-        import shutil
-        
-        found_exe = False
-        found_dir = False
-        
-        # 遍历临时文件夹查找目标
-        for root, dirs, files in os.walk('temp_extract'):
-            # 找 exe
-            if 'exiftool(-k).exe' in files:
-                src = os.path.join(root, 'exiftool(-k).exe')
-                dst = 'exiftool.exe'
-                print(f'Found exe at: {src}, moving to {dst}')
-                if os.path.exists(dst): os.remove(dst)
-                shutil.move(src, dst)
-                found_exe = True
-            
-            # 找依赖文件夹
-            if 'exiftool_files' in dirs:
-                src = os.path.join(root, 'exiftool_files')
-                dst = 'exiftool_files'
-                print(f'Found dir at: {src}, moving to {dst}')
-                if os.path.exists(dst): shutil.rmtree(dst)
-                shutil.move(src, dst)
-                found_dir = True
-        
-        if not found_exe:
-            print('Error: Exiftool exe not found!')
-            exit(1)
-        if not found_dir:
-            print('Error: Exiftool_files dir not found!')
-            exit(1)
-        "
-        
-        # 4. 验证
-        dir
-        
+        if (Test-Path "exiftool.exe") {
+            Write-Host "ExifTool found in root directory."
+        } else {
+            Write-Error "ExifTool.exe not found! Please upload it to the repository root."
+            exit 1
+        }
+
+    # 5. 执行打包
+    # 参数解释：
+    # --add-data "exiftool.exe;." : 将 exe 放入包的根目录，配合您代码中的 sys._MEIPASS 读取
+    # --hidden-import "tkinter" : 显式确保 GUI 库被打包
     - name: Build with PyInstaller
-      # 此时 exiftool.exe 和 exiftool_files 都在根目录，直接打包
       run: |
-        pyinstaller -n "Getgeotag" -w --onedir --noupx --add-data "exiftool.exe;." --add-data "exiftool_files;exiftool_files" getgeotag.py
-        
+        pyinstaller --clean --noconfirm --onefile --windowed --add-data "exiftool.exe;." --hidden-import "tkinter" --name "GetGeoTag" getgeotag.py
+
+    # 6. 上传生成的软件
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Getgeotag-Windows
-        path: dist/Getgeotag/
+        name: GetGeoTag-Software
+        path: dist/GetGeoTag.exe
