@@ -7,6 +7,7 @@ import threading
 import json
 import tempfile
 import time
+import re
 import tkinter as tk
 from tkinter import filedialog, scrolledtext
 from pathlib import Path
@@ -19,13 +20,12 @@ class App:
     def __init__(self, root):
         """初始化主应用程序窗口及UI组件"""
         self.root = root
-        self.root.title("Getgeotag (Fixed Encoding)")
+        # 修正软件标题
+        self.root.title("Getgeotag")
         
-        # 窗口尺寸及背景配置
-        self.root.geometry("750x500") # 稍微调大一点以便看日志
+        self.root.geometry("800x600")
         self.root.configure(bg="#ECECEC")
 
-        # 绑定窗口关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.last_opened_dir = None
@@ -72,7 +72,7 @@ class App:
         self.text_log = scrolledtext.ScrolledText(
             frame_main, 
             state='disabled', 
-            font=('Menlo', 12), 
+            font=('Menlo', 11), # 稍微调小字体以显示更多内容
             padx=10, 
             pady=10,
             bg="white",       
@@ -140,17 +140,14 @@ class App:
         return os.path.join(os.path.abspath("."), relative_path)
 
     def run_exiftool(self, tool_path, args, file_list=None):
-        """
-        调用 ExifTool。
-        关键修改：使用 utf-8 写入临时文件，并确保参数传递正确。
-        """
         temp_arg_file = None
         cmd = [tool_path] + args
         
+        # 使用 UTF-8 处理输出
         run_kwargs = {
             "capture_output": True,
             "text": True,
-            "encoding": "utf-8", # 强制 Python 以 UTF-8 读取输出
+            "encoding": "utf-8", 
             "errors": "replace",
             "stdin": subprocess.DEVNULL
         }
@@ -162,11 +159,12 @@ class App:
 
         try:
             if file_list:
-                # 关键：以 utf-8 编码将文件名写入临时文件
                 fd, temp_arg_path = tempfile.mkstemp(text=True)
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     for path in file_list:
-                        f.write(path + "\n")
+                        # 关键修复：将路径分隔符强制转换为正斜杠，防止 ExifTool 在 Windows 下转义错误
+                        clean_path = str(path).replace("\\", "/")
+                        f.write(clean_path + "\n")
                 cmd.extend(["-@", temp_arg_path])
                 temp_arg_file = temp_arg_path
 
@@ -182,7 +180,6 @@ class App:
         track_files = []
         photo_files = []
         try:
-            # 使用 resolve() 获取绝对路径，解决外接硬盘路径问题
             for file_path in target_dir.iterdir():
                 if file_path.is_file() and not file_path.name.startswith('._'):
                     ext = file_path.suffix.lower()
@@ -193,6 +190,21 @@ class App:
         except Exception:
             pass
         return track_files, photo_files
+
+    def clean_log_output(self, output_str):
+        """清理 ExifTool 输出中的乱码和进度字符"""
+        if not output_str:
+            return ""
+        # 移除包含大量乱码符号的行（通常是进度条）
+        lines = output_str.split('\n')
+        clean_lines = []
+        for line in lines:
+            # 如果行中包含太多不可打印字符或连续的特殊符号，则跳过
+            if line.count('') > 3 or line.count('◆') > 3:
+                continue
+            if line.strip():
+                clean_lines.append(line.strip())
+        return "\n".join(clean_lines)
 
     def process_single_folder(self, target_dir, exiftool_path):
         track_files, photo_files = self.scan_folder_content(target_dir)
@@ -206,46 +218,66 @@ class App:
         # =======================================================
         # 1. 写入 GPS 阶段
         # =======================================================
-        self.log(f"  - Writing GPS data...")
+        self.log(f"  - Attempting to write GPS data...")
         
-        # 关键修改：添加 -charset filename=UTF8
-        # 这告诉 ExifTool 临时文件里的文件名是 UTF-8 编码的，解决 "File not found"
         write_args = [
             '-overwrite_original', 
             '-P',
-            '-charset', 'filename=UTF8' 
+            '-charset', 'filename=UTF8' # 强制 UTF8 文件名编码
         ]
         
         for track in track_files:
-            write_args.extend(['-geotag', track])
+            # 路径标准化：替换反斜杠
+            track_clean = str(track).replace("\\", "/")
+            write_args.extend(['-geotag', track_clean])
         
         proc_write = self.run_exiftool(exiftool_path, write_args, list(photo_files))
         
-        # 错误日志捕获
+        # 分析写入结果
+        files_updated = 0
+        write_failed = False
+
         if proc_write.returncode != 0:
-            self.log(f"  - [Warning] ExifTool reported issues (Code {proc_write.returncode}):")
-            if proc_write.stdout:
-                # 只打印前1000个字符，避免日志刷屏
-                self.log(f"    [STDOUT]: {proc_write.stdout.strip()[:1000]}")
-            if proc_write.stderr:
-                self.log(f"    [STDERR]: {proc_write.stderr.strip()[:1000]}")
+            write_failed = True
+            self.log(f"  - [Error] ExifTool failed (Code {proc_write.returncode}).")
+            
+            # 打印清理后的错误信息
+            clean_stderr = self.clean_log_output(proc_write.stderr)
+            if clean_stderr:
+                self.log(f"    Details: {clean_stderr[:500]}")
         else:
-            # 检查是否有警告信息（即使返回码是0）
-            if "Warning" in proc_write.stderr or "Error" in proc_write.stderr:
-                self.log(f"    [Info] Output message: {proc_write.stderr.strip()[:500]}")
+            # 尝试从 stdout 中解析 "X image files updated"
+            # 输出示例: "    1 image files updated"
+            match = re.search(r'(\d+)\s+image files updated', proc_write.stdout)
+            if match:
+                files_updated = int(match.group(1))
+            
+            if files_updated == 0:
+                self.log("  - [Warning] 0 images were updated with new GPS data.")
+                # 检查是否有具体原因
+                if "No matching GPS data" in proc_write.stderr:
+                    self.log("    Reason: No matching GPS track points found for photo timestamps.")
+            else:
+                self.log(f"  - [Success] Successfully geotagged {files_updated} images.")
 
         # =======================================================
         # 2. 生成 CSV 报告阶段
         # =======================================================
-        self.log(f"  - Generating CSV report...")
+        
+        # 根据写入结果，给予用户明确的提示
+        if files_updated > 0:
+            self.log(f"  - Generating CSV report (Based on NEWLY WRITTEN data)...")
+        else:
+            self.log(f"  - [Notice] Generating CSV report based on PRE-EXISTING metadata.")
+            self.log(f"    (Since no new data was written, this list shows original info)")
+
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         output_csv = target_dir / f"photo_info_{timestamp}.csv"
         
-        # 同样添加 -charset filename=UTF8
         read_args = [
             '-j', '-q', 
-            '-charset', 'UTF8',           # 输出内容的编码
-            '-charset', 'filename=UTF8',  # 输入文件名的编码 (修复关键)
+            '-charset', 'UTF8',           
+            '-charset', 'filename=UTF8',
             '-FileName', '-GPSLatitude', '-n', 
             '-GPSLongitude', '-n', '-GPSAltitude', '-n', 
             '-DateTimeOriginal'
@@ -255,7 +287,6 @@ class App:
         
         count = 0
         try:
-            # 尝试解析 JSON
             meta_data = json.loads(proc_read.stdout)
             if meta_data:
                 with open(output_csv, 'w', newline='', encoding='gbk') as f:
@@ -278,12 +309,10 @@ class App:
                             d_val, t_val
                         ])
                         count += 1
-                self.log(f"  - [Success] Generated: {output_csv.name}")
+                self.log(f"  - [Report] Saved to: {output_csv.name}")
                 return count, output_csv.name
         except json.JSONDecodeError:
             self.log(f"  - [Error] Failed to parse metadata JSON.")
-            if proc_read.stderr:
-                self.log(f"    ExifTool Error: {proc_read.stderr.strip()}")
         except Exception as e:
              self.log(f"  - [Error] CSV Generation failed: {e}")
         
@@ -301,7 +330,6 @@ class App:
             exiftool_path = self.get_resource_path("exiftool.exe")
             
             if not os.path.exists(exiftool_path):
-                # Fallback check
                 if os.path.exists("exiftool.exe"):
                     exiftool_path = os.path.abspath("exiftool.exe")
                 else:
@@ -321,7 +349,6 @@ class App:
                 if t_sub and p_sub:
                     task_folders.append(sub)
             
-            # 去重
             seen = set()
             unique_tasks = []
             for f in task_folders:
