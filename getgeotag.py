@@ -18,68 +18,43 @@ PHOTO_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.cr2', '.nef', '.
 
 class App:
     def __init__(self, root):
-        """初始化主应用程序窗口及UI组件"""
         self.root = root
-        # 修正软件标题
         self.root.title("Getgeotag")
         
         self.root.geometry("800x600")
         self.root.configure(bg="#ECECEC")
-
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.last_opened_dir = None
 
-        # 主布局容器
         frame_main = tk.Frame(root, padx=15, pady=15, bg="#ECECEC")
         frame_main.pack(fill=tk.BOTH, expand=True)
 
-        # 顶部操作说明标签
         self.lbl_instruction = tk.Label(
             frame_main,
             text="Select a folder containing photos and tracks (External Drives Supported).",
-            font=('Helvetica', 12),
-            fg="#555555",
-            bg="#ECECEC",
-            anchor="center"
+            font=('Helvetica', 12), fg="#555555", bg="#ECECEC", anchor="center"
         )
         self.lbl_instruction.pack(side=tk.TOP, fill=tk.X, pady=(0, 10))
 
-        # 文件夹选择按钮
         self.btn_select = tk.Button(
             frame_main, 
             text="Select Photo(s) and Track(s) Folder to Start", 
             command=self.select_folder, 
-            height=1, 
-            font=('Helvetica', 14, 'bold'),
-            cursor="hand2", 
-            highlightbackground="#ECECEC"
+            height=1, font=('Helvetica', 14, 'bold'), cursor="hand2", highlightbackground="#ECECEC"
         )
         self.btn_select.pack(side=tk.TOP, fill=tk.X, pady=(0, 15))
 
-        # 底部信息
         self.lbl_footer = tk.Label(
             frame_main,
             text="饮水机管理员 lixiaochen xiaochenensis@gmail.com",
-            font=('Helvetica', 10),
-            fg="#999999",
-            bg="#ECECEC",
-            anchor="w"
+            font=('Helvetica', 10), fg="#999999", bg="#ECECEC", anchor="w"
         )
         self.lbl_footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 0))
 
-        # 日志显示区域
         self.text_log = scrolledtext.ScrolledText(
-            frame_main, 
-            state='disabled', 
-            font=('Menlo', 11), # 稍微调小字体以显示更多内容
-            padx=10, 
-            pady=10,
-            bg="white",       
-            fg="#333333",     
-            relief=tk.FLAT,   
-            borderwidth=0,
-            highlightthickness=0 
+            frame_main, state='disabled', font=('Menlo', 11), 
+            padx=10, pady=10, bg="white", fg="#333333", relief=tk.FLAT, borderwidth=0
         )
         self.text_log.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
@@ -91,17 +66,13 @@ class App:
             threading.Thread(target=self.batch_process_entry, args=(path_arg,), daemon=True).start()
 
     def on_closing(self):
-        try:
-            self.root.destroy()
-        except:
-            pass
+        try: self.root.destroy()
+        except: pass
         os._exit(0)
 
     def log(self, message):
-        try:
-            self.root.after(0, self._log_ui, message)
-        except:
-            pass
+        try: self.root.after(0, self._log_ui, message)
+        except: pass
 
     def _log_ui(self, message):
         try:
@@ -109,13 +80,10 @@ class App:
             self.text_log.insert(tk.END, message + "\n")
             self.text_log.see(tk.END)
             self.text_log.config(state='disabled')
-        except:
-            pass
+        except: pass
 
     def finish_task(self, summary=None):
-        if summary:
-            self.log(summary)
-        
+        if summary: self.log(summary)
         self.btn_select.config(state='normal', text="Select Photo(s) and Track(s) Folder to Start")
         self.log(">>> Waiting for next task...")
 
@@ -124,33 +92,22 @@ class App:
             start_dir = self.last_opened_dir
         else:
             start_dir = os.path.expanduser("~/Downloads")
-            if not os.path.isdir(start_dir):
-                start_dir = os.path.expanduser("~")
+            if not os.path.isdir(start_dir): start_dir = os.path.expanduser("~")
 
         folder_selected = filedialog.askdirectory(initialdir=start_dir)
-        
         if folder_selected:
             self.last_opened_dir = folder_selected
             self.btn_select.config(state='disabled', text="Batch Processing...")
             threading.Thread(target=self.batch_process_entry, args=(folder_selected,), daemon=True).start()
 
     def get_resource_path(self, relative_path):
-        if hasattr(sys, '_MEIPASS'):
-            return os.path.join(sys._MEIPASS, relative_path)
+        if hasattr(sys, '_MEIPASS'): return os.path.join(sys._MEIPASS, relative_path)
         return os.path.join(os.path.abspath("."), relative_path)
 
     def run_exiftool(self, tool_path, args, file_list=None):
         temp_arg_file = None
         cmd = [tool_path] + args
-        
-        # 使用 UTF-8 处理输出
-        run_kwargs = {
-            "capture_output": True,
-            "text": True,
-            "encoding": "utf-8", 
-            "errors": "replace",
-            "stdin": subprocess.DEVNULL
-        }
+        run_kwargs = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace", "stdin": subprocess.DEVNULL}
         
         if os.name == 'nt':
             startupinfo = subprocess.STARTUPINFO()
@@ -162,7 +119,7 @@ class App:
                 fd, temp_arg_path = tempfile.mkstemp(text=True)
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     for path in file_list:
-                        # 关键修复：将路径分隔符强制转换为正斜杠，防止 ExifTool 在 Windows 下转义错误
+                        # Normalize path separators
                         clean_path = str(path).replace("\\", "/")
                         f.write(clean_path + "\n")
                 cmd.extend(["-@", temp_arg_path])
@@ -176,34 +133,13 @@ class App:
                 try: os.remove(temp_arg_file)
                 except: pass
 
-    def scan_folder_content(self, target_dir):
-        track_files = []
-        photo_files = []
-        try:
-            for file_path in target_dir.iterdir():
-                if file_path.is_file() and not file_path.name.startswith('._'):
-                    ext = file_path.suffix.lower()
-                    if ext in TRACK_EXTENSIONS:
-                        track_files.append(str(file_path.resolve()))
-                    elif ext in PHOTO_EXTENSIONS:
-                        photo_files.append(str(file_path.resolve()))
-        except Exception:
-            pass
-        return track_files, photo_files
-
     def clean_log_output(self, output_str):
-        """清理 ExifTool 输出中的乱码和进度字符"""
-        if not output_str:
-            return ""
-        # 移除包含大量乱码符号的行（通常是进度条）
+        if not output_str: return ""
         lines = output_str.split('\n')
         clean_lines = []
         for line in lines:
-            # 如果行中包含太多不可打印字符或连续的特殊符号，则跳过
-            if line.count('') > 3 or line.count('◆') > 3:
-                continue
-            if line.strip():
-                clean_lines.append(line.strip())
+            if line.count('') > 3 or line.count('◆') > 3: continue
+            if line.strip(): clean_lines.append(line.strip())
         return "\n".join(clean_lines)
 
     def process_single_folder(self, target_dir, exiftool_path):
@@ -216,60 +152,51 @@ class App:
         self.log(f"  - Found {len(track_files)} tracks, {len(photo_files)} photos.")
 
         # =======================================================
-        # 1. 写入 GPS 阶段
+        # 1. Write GPS Data
         # =======================================================
         self.log(f"  - Attempting to write GPS data...")
         
         write_args = [
             '-overwrite_original', 
             '-P',
-            '-charset', 'filename=UTF8' # 强制 UTF8 文件名编码
+            '-charset', 'filename=UTF8',
+            
+            # Set timezone offset to UTC+8
+            '-Geotime<${DateTimeOriginal}+08:00',
+            
+            # Set time tolerance to 120 seconds (2 minutes)
+            '-api', 'GeoMaxIntSecs=120'
         ]
         
         for track in track_files:
-            # 路径标准化：替换反斜杠
             track_clean = str(track).replace("\\", "/")
             write_args.extend(['-geotag', track_clean])
         
         proc_write = self.run_exiftool(exiftool_path, write_args, list(photo_files))
         
-        # 分析写入结果
         files_updated = 0
-        write_failed = False
-
         if proc_write.returncode != 0:
-            write_failed = True
             self.log(f"  - [Error] ExifTool failed (Code {proc_write.returncode}).")
-            
-            # 打印清理后的错误信息
             clean_stderr = self.clean_log_output(proc_write.stderr)
-            if clean_stderr:
-                self.log(f"    Details: {clean_stderr[:500]}")
+            if clean_stderr: self.log(f"    Details: {clean_stderr[:500]}")
         else:
-            # 尝试从 stdout 中解析 "X image files updated"
-            # 输出示例: "    1 image files updated"
             match = re.search(r'(\d+)\s+image files updated', proc_write.stdout)
-            if match:
-                files_updated = int(match.group(1))
+            if match: files_updated = int(match.group(1))
             
             if files_updated == 0:
-                self.log("  - [Warning] 0 images were updated with new GPS data.")
-                # 检查是否有具体原因
-                if "No matching GPS data" in proc_write.stderr:
-                    self.log("    Reason: No matching GPS track points found for photo timestamps.")
+                self.log("  - [Warning] 0 images were updated.")
+                self.log("    (Cause: No GPS points found within 2 minutes of photo time).")
             else:
                 self.log(f"  - [Success] Successfully geotagged {files_updated} images.")
 
         # =======================================================
-        # 2. 生成 CSV 报告阶段
+        # 2. Generate CSV Report
         # =======================================================
         
-        # 根据写入结果，给予用户明确的提示
         if files_updated > 0:
             self.log(f"  - Generating CSV report (Based on NEWLY WRITTEN data)...")
         else:
             self.log(f"  - [Notice] Generating CSV report based on PRE-EXISTING metadata.")
-            self.log(f"    (Since no new data was written, this list shows original info)")
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         output_csv = target_dir / f"photo_info_{timestamp}.csv"
@@ -318,43 +245,45 @@ class App:
         
         return 0, None
 
+    def scan_folder_content(self, target_dir):
+        track_files = []
+        photo_files = []
+        try:
+            for file_path in target_dir.iterdir():
+                if file_path.is_file() and not file_path.name.startswith('._'):
+                    ext = file_path.suffix.lower()
+                    if ext in TRACK_EXTENSIONS: track_files.append(str(file_path.resolve()))
+                    elif ext in PHOTO_EXTENSIONS: photo_files.append(str(file_path.resolve()))
+        except Exception: pass
+        return track_files, photo_files
+
     def batch_process_entry(self, root_dir_str):
         start_time = time.time()
-        
         try:
             self.log("=" * 40)
             self.log("Analyzing structure...")
-            
             root_dir = Path(root_dir_str).resolve()
-            
             exiftool_path = self.get_resource_path("exiftool.exe")
             
             if not os.path.exists(exiftool_path):
-                if os.path.exists("exiftool.exe"):
-                    exiftool_path = os.path.abspath("exiftool.exe")
+                if os.path.exists("exiftool.exe"): exiftool_path = os.path.abspath("exiftool.exe")
                 else:
                     self.log("Error: ExifTool binary not found.")
                     self.root.after(0, self.finish_task)
                     return
 
             task_folders = []
-            
             t_files, p_files = self.scan_folder_content(root_dir)
-            if t_files and p_files:
-                task_folders.append(root_dir)
+            if t_files and p_files: task_folders.append(root_dir)
             
             subdirs = sorted([p for p in root_dir.iterdir() if p.is_dir()], key=lambda p: p.name)
             for sub in subdirs:
                 t_sub, p_sub = self.scan_folder_content(sub)
-                if t_sub and p_sub:
-                    task_folders.append(sub)
+                if t_sub and p_sub: task_folders.append(sub)
             
-            seen = set()
-            unique_tasks = []
+            seen = set(); unique_tasks = []
             for f in task_folders:
-                if str(f) not in seen:
-                    unique_tasks.append(f)
-                    seen.add(str(f))
+                if str(f) not in seen: unique_tasks.append(f); seen.add(str(f))
             task_folders = unique_tasks
 
             if not task_folders:
@@ -364,37 +293,22 @@ class App:
 
             total_tasks = len(task_folders)
             self.log(f"Queue: {total_tasks} folder(s) found.")
-            for i, folder in enumerate(task_folders, 1):
-                self.log(f"  {i}. {folder.name}")
-            
+            for i, folder in enumerate(task_folders, 1): self.log(f"  {i}. {folder.name}")
             self.log("-" * 40)
 
-            total_processed_photos = 0
-            completed_folders = 0
-            
+            total_processed_photos = 0; completed_folders = 0
             for index, folder in enumerate(task_folders, 1):
                 self.log(f"Processing [{index}/{total_tasks}]: {folder.name}")
-                
                 p_count, _ = self.process_single_folder(folder, exiftool_path)
-                
-                if p_count > 0:
-                    total_processed_photos += p_count
-                    completed_folders += 1
-                
+                if p_count > 0: total_processed_photos += p_count; completed_folders += 1
                 self.log("-" * 40)
 
             end_time = time.time()
             duration = end_time - start_time
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
+            minutes = int(duration // 60); seconds = int(duration % 60)
 
-            summary = (
-                f"\n[BATCH COMPLETED]\n"
-                f"Folders: {completed_folders} / {total_tasks}\n"
-                f"Photos:  {total_processed_photos}\n"
-                f"Time:    {minutes}m {seconds}s\n"
-                f"{'='*40}"
-            )
+            summary = (f"\n[BATCH COMPLETED]\nFolders: {completed_folders} / {total_tasks}\n"
+                       f"Photos:  {total_processed_photos}\nTime:    {minutes}m {seconds}s\n{'='*40}")
             self.root.after(0, lambda: self.finish_task(summary))
 
         except Exception as e:
