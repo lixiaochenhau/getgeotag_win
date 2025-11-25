@@ -25,7 +25,7 @@ class App:
         self.root.geometry("680x480")
         self.root.configure(bg="#ECECEC")
 
-        # 绑定窗口关闭事件，确保程序彻底退出
+        # 绑定窗口关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.last_opened_dir = None
@@ -57,7 +57,7 @@ class App:
         )
         self.btn_select.pack(side=tk.TOP, fill=tk.X, pady=(0, 15))
 
-        # 底部作者及维护者信息
+        # 底部信息
         self.lbl_footer = tk.Label(
             frame_main,
             text="饮水机管理员 lixiaochen xiaochenensis@gmail.com",
@@ -85,14 +85,14 @@ class App:
 
         self.log(">>> Application ready.")
 
-        # 处理启动参数（如文件拖拽）
+        # 处理启动参数
         if len(sys.argv) > 1:
             path_arg = sys.argv[1]
             self.log(f"Argument detected: {path_arg}")
             threading.Thread(target=self.batch_process_entry, args=(path_arg,), daemon=True).start()
 
     def on_closing(self):
-        """强制退出程序以避免资源回收导致的关闭卡顿"""
+        """强制退出程序"""
         try:
             self.root.destroy()
         except:
@@ -100,14 +100,14 @@ class App:
         os._exit(0)
 
     def log(self, message):
-        """线程安全的日志更新方法"""
+        """线程安全的日志更新"""
         try:
             self.root.after(0, self._log_ui, message)
         except:
             pass
 
     def _log_ui(self, message):
-        """更新日志UI组件的内部方法"""
+        """更新日志UI组件"""
         try:
             self.text_log.config(state='normal')
             self.text_log.insert(tk.END, message + "\n")
@@ -117,7 +117,7 @@ class App:
             pass
 
     def finish_task(self, summary=None):
-        """任务结束处理：输出汇总信息并重置UI状态"""
+        """任务结束处理"""
         if summary:
             self.log(summary)
         
@@ -125,7 +125,7 @@ class App:
         self.log(">>> Waiting for next task...")
 
     def select_folder(self):
-        """处理文件夹选择逻辑，包含路径记忆功能"""
+        """处理文件夹选择逻辑"""
         if self.last_opened_dir and os.path.isdir(self.last_opened_dir):
             start_dir = self.last_opened_dir
         else:
@@ -141,19 +141,20 @@ class App:
             threading.Thread(target=self.batch_process_entry, args=(folder_selected,), daemon=True).start()
 
     def get_resource_path(self, relative_path):
-        """获取资源文件的绝对路径，适配 PyInstaller 打包环境"""
+        """获取资源绝对路径，适配 PyInstaller"""
         if hasattr(sys, '_MEIPASS'):
             return os.path.join(sys._MEIPASS, relative_path)
-        return os.path.join(os.path.abspath("."), "assets", relative_path)
+        return os.path.join(os.path.abspath("."), relative_path)
 
     def run_exiftool(self, tool_path, args, file_list=None):
         """
-        调用 ExifTool 子进程执行元数据操作。
+        调用 ExifTool 子进程。
         使用临时文件传递参数以规避命令行长度限制。
         """
         temp_arg_file = None
         cmd = [tool_path] + args
         
+        # 允许捕获标准输出和错误输出
         run_kwargs = {
             "capture_output": True,
             "text": True,
@@ -186,7 +187,7 @@ class App:
                 except: pass
 
     def scan_folder_content(self, target_dir):
-        """扫描指定目录下的有效轨迹文件和照片文件"""
+        """扫描目录下的轨迹文件和照片文件"""
         track_files = []
         photo_files = []
         try:
@@ -202,7 +203,7 @@ class App:
         return track_files, photo_files
 
     def process_single_folder(self, target_dir, exiftool_path):
-        """处理单个文件夹的核心逻辑：写入GPS信息并生成CSV报告"""
+        """处理单个文件夹：写入GPS并生成CSV，包含详细错误日志"""
         track_files, photo_files = self.scan_folder_content(target_dir)
 
         if not track_files or not photo_files:
@@ -213,14 +214,26 @@ class App:
 
         # 执行 GPS 写入操作
         self.log(f"  - Writing GPS data...")
-        write_args = ['-q', '-overwrite_original', '-P']
+        # 移除 -q 参数以便在出错时能捕获更多信息，或者保留但捕获输出
+        write_args = ['-overwrite_original', '-P']
         for track in track_files:
             write_args.extend(['-geotag', track])
         
         proc_write = self.run_exiftool(exiftool_path, write_args, list(photo_files))
         
+        # 详细的错误处理逻辑
         if proc_write.returncode != 0:
-            self.log(f"  - [Warning] ExifTool reported issues during write.")
+            self.log(f"  - [Warning] ExifTool reported issues (Code {proc_write.returncode}):")
+            # 打印 ExifTool 的具体报错信息，方便调试
+            if proc_write.stdout:
+                self.log(f"    [STDOUT]: {proc_write.stdout.strip()[:600]}") # 截断防止过长
+            if proc_write.stderr:
+                self.log(f"    [STDERR]: {proc_write.stderr.strip()[:600]}")
+        else:
+            # 即使 returncode 为 0，也可能没有更新图片（例如时间匹配不上）
+            if "0 image files updated" in proc_write.stdout:
+                self.log(f"  - [Warning] No images were updated. Possible time mismatch.")
+                self.log(f"    Details: {proc_write.stdout.strip()[:300]}")
 
         # 生成 CSV 报告
         self.log(f"  - Generating CSV report...")
@@ -264,11 +277,13 @@ class App:
                 return count, output_csv.name
         except:
             self.log(f"  - [Error] Failed to parse metadata.")
+            if proc_read.stderr:
+                self.log(f"    Debug: {proc_read.stderr.strip()}")
         
         return 0, None
 
     def batch_process_entry(self, root_dir_str):
-        """批量处理入口：分析目录结构并顺序执行处理任务"""
+        """批量处理入口：分析目录结构并顺序执行"""
         start_time = time.time()
         
         try:
@@ -278,20 +293,21 @@ class App:
             root_dir = Path(root_dir_str).resolve()
             
             # 配置 ExifTool 路径
-            exiftool_path = self.get_resource_path("exiftool")
-            if os.name == 'nt' and not exiftool_path.lower().endswith('.exe'):
-                exiftool_path += ".exe"
+            exiftool_path = self.get_resource_path("exiftool.exe")
+            
+            # 本地调试时的回退机制
             if not os.path.exists(exiftool_path):
-                local_tool = os.path.join(root_dir, "exiftool")
+                # 尝试查找同目录下的 exiftool
+                local_tool = os.path.join(root_dir, "exiftool.exe")
                 if os.path.exists(local_tool):
                     exiftool_path = local_tool
+                elif os.path.exists("exiftool.exe"):
+                    exiftool_path = os.path.abspath("exiftool.exe")
                 else:
                     self.log("Error: ExifTool binary not found.")
+                    self.log(f"Searched at: {exiftool_path}")
                     self.root.after(0, self.finish_task)
                     return
-            if os.name != 'nt':
-                try: os.chmod(exiftool_path, 0o755)
-                except: pass
 
             # 识别待处理文件夹
             task_folders = []
@@ -325,7 +341,6 @@ class App:
             # 列出任务队列
             total_tasks = len(task_folders)
             self.log(f"Queue: {total_tasks} folder(s) found.")
-            self.log("Task List:")
             for i, folder in enumerate(task_folders, 1):
                 self.log(f"  {i}. {folder.name}")
             
