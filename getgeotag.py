@@ -32,7 +32,7 @@ class App:
 
         self.lbl_instruction = tk.Label(
             frame_main,
-            text="Select a folder containing photos and tracks (External Drives Supported).",
+            text="Select a single or parent folder containing photos and tracks to process.",
             font=('Helvetica', 12), fg="#555555", bg="#ECECEC", anchor="center"
         )
         self.lbl_instruction.pack(side=tk.TOP, fill=tk.X, pady=(0, 10))
