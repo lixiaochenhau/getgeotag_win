@@ -105,8 +105,22 @@ class App:
         return os.path.join(os.path.abspath("."), relative_path)
 
     def run_exiftool(self, tool_path, args, file_list=None):
+        """
+        修复版 run_exiftool:
+        将所有参数（args 和 file_list）合并写入一个 UTF-8 编码的临时文件。
+        这解决了 Windows 下命令行对中文路径和特殊符号(&)解析错误的问题。
+        """
         temp_arg_file = None
-        cmd = [tool_path] + args
+        
+        # 合并所有参数：命令行参数 + 文件列表
+        all_params = []
+        if args:
+            all_params.extend(args)
+        if file_list:
+            all_params.extend(file_list)
+
+        cmd = [tool_path]
+        
         run_kwargs = {"capture_output": True, "text": True, "encoding": "utf-8", "errors": "replace", "stdin": subprocess.DEVNULL}
         
         if os.name == 'nt':
@@ -115,15 +129,18 @@ class App:
             run_kwargs["startupinfo"] = startupinfo
 
         try:
-            if file_list:
-                fd, temp_arg_path = tempfile.mkstemp(text=True)
-                with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                    for path in file_list:
-                        # Normalize path separators
-                        clean_path = str(path).replace("\\", "/")
-                        f.write(clean_path + "\n")
-                cmd.extend(["-@", temp_arg_path])
-                temp_arg_file = temp_arg_path
+            # 创建临时参数文件
+            fd, temp_arg_path = tempfile.mkstemp(text=True)
+            # 必须使用 utf-8 编码写入，exiftool 读取参数文件时能够正确处理 utf-8
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                for param in all_params:
+                    # 规范化路径分隔符
+                    clean_param = str(param).replace("\\", "/")
+                    f.write(clean_param + "\n")
+            
+            # 将临时文件作为唯一参数传递给 exiftool
+            cmd.extend(["-@", temp_arg_path])
+            temp_arg_file = temp_arg_path
 
             process = subprocess.run(cmd, **run_kwargs)
             return process
@@ -159,6 +176,7 @@ class App:
         write_args = [
             '-overwrite_original', 
             '-P',
+            # 确保参数文件中的文件名也被识别为 UTF-8
             '-charset', 'filename=UTF8',
             
             # Set timezone offset to UTC+8
